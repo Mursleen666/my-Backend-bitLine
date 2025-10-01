@@ -8,18 +8,28 @@ const connectcloudinary = require("./config/cloudinary");
 const userRouter = require("./routes/userRoute");
 const productRouter = require("./routes/productRoute");
 
-let app = express()
-app.use(express.json())
-app.use(cors())
-connectDB()
-connectcloudinary()
+const app = express();
 
-let Port = process.env.PORT || 4000
+// Middlewares
+app.use(express.json());
+app.use(cors());
 
-app.use("/api/user/",userRouter)
-app.use("/api/product/",productRouter)
+// Database + Cloudinary
+connectDB();
+connectcloudinary();
 
-app.get("/", (req,res)=>{
-    res.send("the port is working fine sir!")
-})
-app.listen(Port, "0.0.0.0", ()=>{console.log("server has started" + Port)})
+// Routes
+app.use("/api/user", userRouter);
+app.use("/api/product", productRouter);
+
+// Test route
+app.get("/", (req, res) => {
+  res.send("The server is working fine!");
+});
+
+// IMPORTANT: Use Railway's injected PORT
+const PORT = process.env.PORT || 4000;
+
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${PORT}`);
+});
