@@ -10,6 +10,8 @@ productRouter.post("/add",upload.fields([{name:"image1", maxCount:1},{name:"imag
 productRouter.post("/remove", removeProduct)
 productRouter.post("/single", singleProduct)
 productRouter.get("/list", listProduct)
+productRouter.get("/:id/:slug", singleProduct);
+
 
 module.exports = productRouter;
  
