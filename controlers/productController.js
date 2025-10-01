@@ -1,58 +1,133 @@
 const cloudinary = require("cloudinary").v2;
-const { response } = require("express");
-const productModel = require("../models/productModels.js")
+const NodeCache = require("node-cache");
+const productModel = require("../models/productModels.js");
 
-const addProduct = async(req, res) =>{
-    try{
-   const {name, description, price, image, category, subCategory, sizes, bestSeller} = req.body
-   const image1 = req.files.image1 && req.files.image1[0]
-   const image2 = req.files.image2 && req.files.image2[0]
-   const image3 = req.files.image3 && req.files.image3[0]
-   const image4 = req.files.image4 && req.files.image4[0]
-   const imgArr = [image1,image2,image3,image4]
-   
-   const images = imgArr.filter((m)=>m!==undefined)
+const productCache = new NodeCache({ stdTTL: 60 }); // Cache for 60s
 
-   const imageUrl = await Promise.all(
-        images.map(async (items) =>{                                                                           
-            let result = cloudinary.uploader.upload(items.path, {resource_type:"image"})
-            return (await result).secure_url
-        } )
-   )
-   const parsedSizes = sizes ? JSON.parse(sizes) : [];
-   const productData = {
-    name, description, price: Number(price), category, subCategory, sizes:parsedSizes, bestSeller:bestSeller === "true"?true:false ,image: imageUrl, date:Date.now()
-   }
+const addProduct = async (req, res) => {
 
-   const myProduct = new productModel(productData)
-   myProduct.save().then(()=>{res.send({success:true, message:"Data save successfully"})})
-  
-  // const data = await 
+  const slugify = (text) => {
+  return text
+    .toString()
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")       // spaces → -
+    .replace(/[^\w\-]+/g, "")   // remove non-word chars
+    .replace(/\-\-+/g, "-");    // collapse multiple dashes
+};
 
-   console.log(name, description, price, image, category, subCategory, sizes, bestSeller);
-   console.log(image1,image2,image3,image4);
-   
+  try {
+    const { name, description, price, image, category, subCategory, sizes, bestSeller } = req.body;
+
+    const image1 = req.files.image1?.[0];
+    const image2 = req.files.image2?.[0];
+    const image3 = req.files.image3?.[0];
+    const image4 = req.files.image4?.[0];
+    const imgArr = [image1, image2, image3, image4].filter(Boolean);
+
+    const imageUrl = await Promise.all(
+      imgArr.map(async (file) => {
+        const result = await cloudinary.uploader.upload(file.path, { resource_type: "image" });
+        return result.secure_url;
+      })
+    );
+
+    const parsedSizes = sizes ? JSON.parse(sizes) : [];
+
+    const slug = slugify(name);
+
+
+    const productData = {
+      name,
+      slug,
+      description,
+      price: Number(price),
+      category,
+      subCategory,
+      sizes: parsedSizes,
+      bestSeller: bestSeller === "true",
+      image: imageUrl,
+      date: Date.now()
+    };
+
+    await new productModel(productData).save();
+
+    // Invalidate cache after adding
+    productCache.flushAll();
+
+    res.send({ success: true, message: "Product saved successfully" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).send({ success: false, msg: err.message });
+  }
+};
+
+const listProduct = async (req, res) => {
+  try {
+    let { page = 1, limit = 10 } = req.query; // defaults: page=1, limit=10
+    page = parseInt(page);
+    limit = parseInt(limit);
+
+    const cacheKey = `products-page-${page}-limit-${limit}`;
+
+    // Check cache
+    const cached = productCache.get(cacheKey);
+    if (cached) {
+      return res.status(200).json({ success: true, ...cached });
     }
-   catch(err){
-    res.send({success:false, msg:err,})
-    console.log(err)
-   }
 
-}
+    const skip = (page - 1) * limit;
 
-const listProduct = async(req, res) =>{
-    const product = await productModel.find().lean({})
-    res.status(200).json({success:true, data:product})
-}
+    const [products, total] = await Promise.all([
+      productModel.find().skip(skip).limit(limit).lean(),
+      productModel.countDocuments()
+    ]);
 
-const removeProduct = async(req, res) =>{
-    const delProduct = await productModel.findByIdAndDelete(req.body.id)
-    res.status(200).json({success:true, response:delProduct})
-}
+    const result = {
+      data: products,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit)
+    };
 
-const singleProduct = async(req, res) =>{
-    const singProduct = await productModel.findById(req.body.id)
-    res.status(200).json({success:true, singProduct})
-}
+    // Save to cache
+    productCache.set(cacheKey, result);
 
-module.exports = {addProduct, removeProduct, listProduct, singleProduct}
+    res.status(200).json({ success: true, ...result });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+};
+
+
+const removeProduct = async (req, res) => {
+  try {
+    const delProduct = await productModel.findByIdAndDelete(req.body.id);
+    productCache.flushAll(); // Invalidate cache
+    res.status(200).json({ success: true, response: delProduct });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+};
+
+const singleProduct = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const product = await productModel.findById(id);
+    if (!product) {
+      return res.status(404).json({ success: false, msg: "Product not found" });
+    }
+    res.status(200).json({ success: true, product });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, msg: err.message });
+  }
+};
+
+
+module.exports = { addProduct, removeProduct, listProduct, singleProduct };
