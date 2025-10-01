@@ -22,4 +22,4 @@ app.use("/api/product/",productRouter)
 app.get("/", (req,res)=>{
     res.send("the port is working fine sir!")
 })
-app.listen(Port, ()=>{console.log("server has started")})
+app.listen(Port, "0.0.0.0", ()=>{console.log("server has started" + Port)})
