@@ -23,7 +23,7 @@ app.use("/api/user", userRouter);
 app.use("/api/product", productRouter);
 
 // Test route
-app.get("/health", (req, res) => {
+app.get("/", (req, res) => {
   res.send("The server is working fine!");
 });
 
